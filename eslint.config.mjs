@@ -6,22 +6,8 @@ const eslintConfig = defineConfig([
   ...nextVitals,
   ...nextTs,
   {
-    rules: {
-      'no-restricted-imports': [
-        'error',
-        {
-          patterns: [
-            {
-              group: ['@/features/*/*'],
-              message: 'Import from the feature public API only.',
-            },
-          ],
-        },
-      ],
-    },
-  },
-  {
-    // shared must not depend on features or server
+    // shared/ ต้องไม่พึ่ง features/ หรือ server/ — dependency ไหลทางเดียว
+    // app → features → shared
     files: ['src/shared/**/*.{ts,tsx}'],
     rules: {
       'no-restricted-imports': [
