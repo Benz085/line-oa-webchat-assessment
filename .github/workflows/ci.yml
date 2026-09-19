@@ -1,0 +1,51 @@
+name: CI
+
+# CD ทำโดย Vercel Git integration: push เข้า main = deploy production, PR = preview
+# (build command ตั้งใน vercel.json) จึงไม่มี deploy job ในไฟล์นี้
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  ci:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      # postinstall รัน `prisma generate` ให้ (ไม่ต้องมี DATABASE_URL)
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      # ตั้งที่ critical: high ที่เหลืออยู่มาจาก dependency ของ Prisma CLI (mysql2, deepmerge-ts)
+      # ซึ่งรันตอน build เท่านั้น และทางแก้ที่ npm เสนอคือ downgrade เป็น prisma 6 (major)
+      # ถ้าเปลี่ยนเป็น Snyk ให้เพิ่ม SNYK_TOKEN ใน repo secrets แล้วใช้ snyk/actions/node
+      - name: Dependency audit
+        run: npm audit --omit=dev --audit-level=critical
+
+      # build ไม่ต้องมี secret: env ฝั่ง server อ่านตอนมี request (lazy) ไม่ใช่ตอน build
+      - name: Build
+        run: npm run build

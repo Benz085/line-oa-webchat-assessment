@@ -1,0 +1,53 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum Direction {
+  INBOUND
+  OUTBOUND
+}
+
+enum MessageStatus {
+  PENDING
+  SENT
+  FAILED
+}
+
+model LineUser {
+  id                   String     @id // LINE userId (Uxxxxxxxx)
+  displayName          String
+  pictureUrl           String?
+  statusMessage        String?
+  isFollowing          Boolean    @default(true)
+  unreadCount          Int        @default(0)
+  lastMessageAt        DateTime?
+  lastMessage          String?
+  lastMessageDirection Direction? // ใช้ทำ prefix "คุณ: " ใน sidebar
+  createdAt            DateTime   @default(now())
+  updatedAt            DateTime   @updatedAt
+  messages             Message[]
+
+  @@index([lastMessageAt])
+}
+
+model Message {
+  id             String        @id @default(cuid())
+  lineUserId     String
+  lineUser       LineUser      @relation(fields: [lineUserId], references: [id])
+  direction      Direction
+  type           String // text | sticker | image | unsupported
+  text           String?
+  payload        Json? // raw message object (sticker id ฯลฯ)
+  lineMessageId  String?       @unique
+  webhookEventId String?       @unique // กัน webhook redelivery ซ้ำ
+  status         MessageStatus @default(SENT)
+  error          String?
+  sentAt         DateTime      @default(now())
+
+  @@index([lineUserId, sentAt])
+}
