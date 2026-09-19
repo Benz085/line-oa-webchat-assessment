@@ -62,15 +62,15 @@ sequenceDiagram
 | Layer | Choice | เหตุผล |
 |---|---|---|
 | Framework | Next.js (App Router, latest stable) + TypeScript (strict) | ตามโจทย์ |
-| UI | Tailwind CSS + shadcn/ui | เร็ว, หน้าตาดี |
+| UI | Tailwind CSS v4 + design tokens และ primitives เขียนเอง (ไม่ใช้ shadcn/ui) | ทำตามดีไซน์ได้ตรง ไม่เพิ่ม dependency — ดู [ui-implementation-plan.md](ui-implementation-plan.md) |
 | Data fetching | TanStack Query (`refetchInterval`) | polling + optimistic update ง่าย |
 | Client state | Zustand (selected user, draft) | เบา |
 | Validation | Zod | validate request body / env |
 | DB | Neon Postgres (Vercel Marketplace, free tier) | serverless-friendly, มี pooled connection |
 | ORM | Prisma | คุ้นมือ |
 | LINE | `@line/bot-sdk` (`messagingApi.MessagingApiClient`, `validateSignature`) | official SDK |
-| Auth (console) | Password เดียวจาก env + signed cookie + `proxy.ts` / `middleware.ts` | กันคนนอกเห็นแชทของ user |
-| Test | Jest + Testing Library | unit test signature / webhook handler |
+| Auth (console) | Password เดียวจาก env + signed cookie + `proxy.ts` (Next 16 เปลี่ยนชื่อจาก `middleware.ts`) | กันคนนอกเห็นแชทของ user |
+| Test | Jest + Testing Library (วางแผนไว้ใน Phase 4 — ยังไม่มีในโค้ด) | unit test signature / webhook handler |
 | Hosting | Vercel (Production domain) | ตามโจทย์ |
 
 ---
@@ -90,6 +90,7 @@ model LineUser {
   unreadCount    Int       @default(0)
   lastMessageAt  DateTime?
   lastMessage    String?
+  lastMessageDirection Direction? // ใช้ทำ prefix "คุณ: " ใน sidebar
   createdAt      DateTime  @default(now())
   updatedAt      DateTime  @updatedAt
   messages       Message[]
@@ -123,8 +124,8 @@ model Message {
 |---|---|---|
 | `POST` | `/api/webhook` | รับ event จาก LINE (public, verify signature) |
 | `GET` | `/api/conversations` | รายชื่อ user เรียงตาม `lastMessageAt desc` |
-| `GET` | `/api/conversations/[userId]/messages?cursor=` | ประวัติแชท (cursor pagination) |
-| `POST` | `/api/conversations/[userId]/messages` | ส่งข้อความ `{ text }` → push |
+| `GET` | `/api/conversations/[userId]/messages?cursor=&limit=` | ประวัติแชท — หน้าแรกคือข้อความล่าสุด `limit` (ค่าเริ่มต้น 30, สูงสุด 100) แล้วส่ง `nextCursor` กลับมาเป็น `cursor` เพื่อขอหน้าที่เก่ากว่า; หน้าแรกพ่วง `conversation` และ `messageCount` มาด้วย |
+| `POST` | `/api/conversations/[userId]/messages` | ส่งข้อความ `{ id, text }` → push; ส่ง `id` เดิมซ้ำ = ส่งใหม่ข้อความเดิม |
 | `POST` | `/api/conversations/[userId]/read` | reset `unreadCount` |
 | `POST` | `/api/auth/login` · `/api/auth/logout` | login console |
 
@@ -143,11 +144,11 @@ model Message {
 
 ### Send message logic
 
-1. Zod validate `text` (1–5000 chars)
-2. เช็คว่า user มีอยู่และ `isFollowing`
-3. insert Message `PENDING`
-4. `pushMessage({ to, messages: [{ type: 'text', text }] }, retryKey)` — ใช้ UUID เป็น `X-Line-Retry-Key` กันส่งซ้ำตอน retry
-5. สำเร็จ → `SENT` / ล้มเหลว → `FAILED` + เก็บ error (เช่น quota เต็ม, user block)
+1. Zod validate `{ id, text }` — `id` เป็น UUID ที่ client สร้างเอง (idempotency key), `text` 1–5000 ตัวอักษร
+2. เช็คว่า user มีอยู่และ `isFollowing` (ไม่ใช่ → `404` / `409`)
+3. ไม่มีแถวของ `id` นี้ → insert Message `PENDING`; มีแล้วและเป็น `FAILED` (หรือ `PENDING` ที่ค้างเกิน 60 วินาที) → "จอง" แถวด้วย compare-and-set (`updateMany where status ...`) แล้วส่งใหม่ **ทับแถวเดิม** ด้วย text ใน DB; `SENT` แล้ว → คืนแถวเดิมโดยไม่ส่งซ้ำ; อยู่ระหว่างส่ง → `409`
+4. `pushMessage({ to, messages: [{ type: 'text', text }] }, retryKey)` — `X-Line-Retry-Key` คำนวณจาก message id (เป็น UUID ที่คงที่ทุกครั้งที่ส่งข้อความเดียวกัน) ถ้า LINE เคยรับไปแล้วจะตอบ `409` ซึ่งถือว่าส่งสำเร็จ ไม่เด้งซ้ำ
+5. สำเร็จ → `SENT` + เก็บ `lineMessageId` + อัปเดต preview ของ sidebar / ล้มเหลว → `FAILED` + เก็บ error ที่อ่านรู้เรื่อง (เช่น quota เต็ม) — ตอบ `200` พร้อม `message.status` เพราะแถวถูกบันทึกแล้ว
 
 > หมายเหตุ: reply token ใช้ได้ครั้งเดียวและอายุสั้น ไม่เหมาะกับการที่ admin ตอบทีหลัง จึงใช้ **push** เป็นหลัก (push นับโควต้าข้อความของแพ็กเกจ OA — เช็คโควต้าใน OA Manager)
 
@@ -182,33 +183,51 @@ model Message {
 
 ## 7. Folder Structure
 
+โครงจริงของโปรเจกต์ แบ่งตามทิศทางของ dependency: `app → features → shared` และ `server/` ใช้ได้เฉพาะฝั่ง server (ตรวจด้วย ESLint และ `server-only`)
+
 ```
 src/
-├─ app/
-│  ├─ (auth)/login/page.tsx
+├─ app/                            # routing เท่านั้น — ไม่มี logic
+│  ├─ layout.tsx · providers.tsx · page.tsx   # page.tsx redirect ไป /chat
+│  ├─ login/page.tsx
 │  ├─ chat/
-│  │  ├─ layout.tsx               # sidebar
-│  │  ├─ page.tsx                 # empty state
-│  │  └─ [userId]/page.tsx        # chat room
+│  │  ├─ layout.tsx                # ChatShell: sidebar + nav rail
+│  │  ├─ page.tsx                  # empty state + QR
+│  │  └─ [userId]/page.tsx         # ห้องแชท
 │  └─ api/
 │     ├─ webhook/route.ts
 │     ├─ auth/{login,logout}/route.ts
 │     └─ conversations/
 │        ├─ route.ts
 │        └─ [userId]/{messages,read}/route.ts
-├─ components/chat/               # ConversationList, MessageList, MessageBubble, Composer
-├─ hooks/                         # useConversations, useMessages, useSendMessage
-├─ lib/
-│  ├─ env.ts                      # Zod-validated env
-│  ├─ prisma.ts                   # singleton client
-│  ├─ line/client.ts              # MessagingApiClient
-│  ├─ line/webhook-handler.ts     # pure logic (test ได้)
-│  └─ auth.ts                     # sign/verify session cookie
-├─ stores/chat-store.ts
-└─ proxy.ts                       # protect /chat และ /api/conversations (Next <16 ใช้ middleware.ts)
-prisma/schema.prisma
-__tests__/
+├─ features/                       # UI + client logic แยกตามฟีเจอร์
+│  ├─ auth/components/             # LoginForm, LogoutButton
+│  └─ chat/
+│     ├─ components/               # ChatRoom, MessageList, MessageBubble, Composer, ConversationSidebar, ...
+│     ├─ hooks/                    # useConversations, useMessages (infinite + polling), useSendMessage, useMarkAsRead
+│     ├─ stores/chat-store.ts      # zustand: draft, outbox, profile panel
+│     ├─ utils/                    # format-time, message-preview, merge-thread
+│     └─ api.ts · query-keys.ts · schemas.ts · types.ts
+├─ server/                         # server-only: DB, LINE, session
+│  ├─ prisma.ts                    # singleton (pooled URL + driver adapter)
+│  ├─ conversations.ts · messages.ts   # repository (list, cursor pagination, mark as read)
+│  ├─ outbound.ts                  # ส่งข้อความ: PENDING → push → SENT/FAILED, retry
+│  ├─ auth.ts · session.ts         # ตรวจ session cookie (HMAC-SHA256)
+│  └─ line/
+│     ├─ client.ts                 # MessagingApiClient, pushText, retry key
+│     └─ webhook-handler.ts        # logic ล้วน รับ db/fetchProfile เป็น argument (test ได้)
+├─ shared/                         # ใช้ร่วมกัน ห้าม import จาก features/ หรือ server/
+│  ├─ components/ui/               # Avatar, OaInvite (QR), icons
+│  ├─ constants/ · utils/ · lib/   # routes, cn, query-client, ...
+├─ config/                         # env.server.ts (Zod, parse แบบ lazy) · env.client.ts
+├─ generated/prisma/               # Prisma client — gitignored, สร้างตอน postinstall
+├─ proxy.ts                        # ป้องกัน /chat และ /api/conversations (Next 16: ชื่อใหม่ของ middleware.ts)
+└─ styles/globals.css              # design tokens
+prisma/{schema.prisma, migrations/}
+prisma.config.ts · vercel.json
 ```
+
+> Route handler ที่เป็น public คือ `/api/webhook` อย่างเดียว (ไม่อยู่ใน matcher ของ `proxy.ts`) — ยืนยันตัวตนด้วย `x-line-signature`
 
 ---
 
@@ -245,9 +264,9 @@ NEXT_PUBLIC_LINE_OA_URL=       # https://line.me/R/ti/p/@xxxx (แสดงใ�
 
 ### 9.3 Vercel
 1. Import repo → Framework: Next.js
-2. Storage → เพิ่ม Neon Postgres (inject `DATABASE_URL` อัตโนมัติ)
-3. ใส่ env ที่เหลือ
-4. Build command: `prisma generate && prisma migrate deploy && next build`
+2. Storage → เพิ่ม Neon Postgres — เลือก region ใกล้ผู้ใช้ (เช่น Singapore) และตั้ง Function Region ของ Vercel ให้ตรงกัน integration จะ inject `DATABASE_URL` (pooled) และ `DATABASE_URL_UNPOOLED` ให้อัตโนมัติ (`prisma.config.ts` ใช้ตัวหลังตอน migrate)
+3. ใส่ env ที่เหลือ (ดูตารางใน README) — `NEXT_PUBLIC_LINE_OA_URL` ต้องมีก่อน build เพราะ Next ฝังค่าลง bundle
+4. Build command ตั้งไว้ใน `vercel.json`: `prisma migrate deploy && next build` (`prisma generate` รันจาก `postinstall` แล้ว)
 5. ⚠️ Webhook ต้องชี้ไปที่ **Production domain** — Preview deployment มักเปิด Deployment Protection ทำให้ LINE ยิงไม่เข้า
 
 ### 9.4 Local dev

@@ -3,6 +3,8 @@
 > แผนแปลงดีไซน์จาก Design canvas "LINE OA Webchat" เป็นหน้าจอจริง
 > ต่อยอดจาก [implementation-plan.md](implementation-plan.md) ซึ่งเป็นแผนภาพรวมของทั้งโปรเจกต์
 
+> **สถานะ: UI ทำเสร็จแล้ว และชั้น data สลับจาก mock เป็นของจริงแล้ว (Phase 1–3)** — เอกสารนี้เก็บไว้เป็นบันทึกการตัดสินใจตอนทำ UI ส่วนที่เปลี่ยนไปจากแผนนี้มีทำเครื่องหมาย **(เปลี่ยนแล้ว)** ไว้ในแต่ละ Step
+
 ---
 
 ## Context
@@ -11,7 +13,7 @@ repo นี้เพิ่งผ่าน Phase 0 ของ [implementation-plan
 
 ตอนนี้มีดีไซน์แล้ว 4 artboards: Login 1440×900, Chat console desktop 1440×900, Mobile conversations 390×844, Mobile chat room 390×844 แผนนี้คือการแปลงดีไซน์นั้นเป็นหน้าจอที่กดใช้งานได้จริง
 
-**ขอบเขต:** ทำ UI ก่อน โดยให้ route handlers ตอบจาก in-memory fixtures — ได้เห็นของจริงในเบราว์เซอร์โดยยังไม่ต้องตั้ง Neon และ LINE channel ส่วน API contract เขียนตาม §5 ของแผนเดิมและ shape ของข้อมูลตรงกับ Prisma models ใน §4 ดังนั้น Phase 1–3 ที่จะตามมาแทบไม่ต้องแตะ UI เลย แค่สลับชั้น data
+**ขอบเขต:** ทำ UI ก่อน โดยให้ route handlers ตอบจาก in-memory fixtures (ตอนนี้แทนด้วย Prisma แล้ว) — ได้เห็นของจริงในเบราว์เซอร์โดยยังไม่ต้องตั้ง Neon และ LINE channel ส่วน API contract เขียนตาม §5 ของแผนเดิมและ shape ของข้อมูลตรงกับ Prisma models ใน §4 ดังนั้น Phase 1–3 ที่จะตามมาแทบไม่ต้องแตะ UI เลย แค่สลับชั้น data
 
 **เข้า v1:** layout ทั้งหมด, ส่งข้อความ (optimistic + PENDING/FAILED + retry), polling, unread badge, สถานะ unfollow, responsive, profile panel ด้านขวา, หน้า login
 
@@ -60,7 +62,7 @@ repo นี้เพิ่งผ่าน Phase 0 ของ [implementation-plan
 - **`src/shared/components/ui/Avatar.tsx`** — รับ `displayName`, `pictureUrl`, `userId`, `size` แสดงรูปถ้ามี ไม่มีก็อักษรย่อบนพื้นสีที่คำนวณจาก `userId`
 - `src/shared/utils/cn.ts` และ `src/shared/constants/routes.ts` มีอยู่แล้ว ใช้ได้เลย
 
-## Step 3 — Types, schemas และ mock store
+## Step 3 — Types, schemas และ mock store (mock ถูกแทนแล้ว)
 
 **`src/features/chat/types.ts`** — ตั้งชื่อ field ให้ตรงกับ Prisma models ใน §4 ของแผนเดิม เพื่อให้สลับไป Prisma แล้ว UI ไม่ต้องแก้:
 
@@ -83,17 +85,17 @@ type Message = {
 
 วันเวลาเป็น ISO string ทั้งหมด เพื่อให้ผ่าน JSON ได้โดยไม่ต้องแปลง
 
-**`src/features/chat/schemas.ts`** — zod: `sendMessageSchema` (`text` 1–5000 ตาม §5) ใช้ทั้งฝั่ง route handler และฟอร์ม
+**`src/features/chat/schemas.ts`** — zod: `sendMessageSchema` (`text` 1–5000 ตาม §5) ใช้ทั้งฝั่ง route handler และฟอร์ม **(เปลี่ยนแล้ว)** เพิ่ม `id` (UUID ที่ client สร้าง เป็น idempotency key ของการส่ง/ส่งใหม่) และ `listMessagesQuerySchema` สำหรับ `cursor` / `limit`
 
 **`src/server/mock/conversations.ts`** — `import 'server-only'` เก็บ state ไว้ใน module-level array seed ด้วยข้อมูลชุดเดียวกับในดีไซน์ (ผู้ใช้ 6 คน: สมชาย ใจดี unread 2, Suda P., ณัฐพงศ์ ศรีสุข, Ploy Chanakarn, กิตติศักดิ์ มั่นคง, Mali W. ที่ unfollow แล้ว พร้อมบทสนทนาของแต่ละคน) เปิด function ชุดเดียวกับที่ repository จริงจะมี: `listConversations`, `listMessages`, `appendOutbound`, `markAsRead`
 
-> in-memory ใช้ได้เฉพาะตอน `next dev` — บน Vercel แต่ละ invocation ไม่แชร์ memory ตามที่ §2 ของแผนเดิมเตือนไว้ ก้อนนี้จะถูกแทนด้วย Prisma ใน Phase 1
+> **(เปลี่ยนแล้ว)** ไฟล์นี้ถูกลบ และแทนด้วย Prisma repository ที่ `src/server/conversations.ts` (`listConversations`, `getConversation`, `markAsRead`), `src/server/messages.ts` (`listMessages` แบบ cursor) และ `src/server/outbound.ts` (ส่งข้อความ) ชื่อฟังก์ชันคงเดิมแต่เป็น async — เหตุผลที่ต้องเลิกใช้ in-memory คือบน Vercel แต่ละ invocation ไม่แชร์ memory ตามที่ §2 ของแผนเดิมเตือนไว้
 
 **`src/config/env.server.ts`** — ตอนนี้ parse ทุกตัวพร้อมกัน เฟส mock ที่ยังไม่มี `DATABASE_URL` และ LINE credentials จะ throw ทันทีที่แตะ แยกเป็น getter ต่อเรื่อง แต่ละตัว parse เฉพาะส่วนของตัวเอง: `getAuthEnv()` (`ADMIN_PASSWORD`, `SESSION_SECRET`), `getLineEnv()`, `getDbEnv()` แบบนี้ Step 10 เรียก `getAuthEnv()` ได้โดยไม่ลาก DB มาด้วย และยังใช้ต่อได้ตอนเข้า Phase 1
 
 ## Step 4 — Route handlers
 
-ตาม §5 ของแผนเดิม ทุกไฟล์อ่านจาก mock store ของ Step 3 และ validate ด้วย zod
+ตาม §5 ของแผนเดิม ทุกไฟล์ validate ด้วย zod (ตอนทำ UI อ่านจาก mock store ของ Step 3 — **เปลี่ยนแล้ว** ตอนนี้อ่านจาก Prisma)
 
 | ไฟล์ | เมธอด |
 |---|---|
@@ -103,7 +105,7 @@ type Message = {
 
 **เฉพาะ Next 16:** `params` เป็น Promise ต้อง `const { userId } = await params` (ยืนยันจาก `node_modules/next/dist/docs/`) ส่วน route handlers ไม่ถูก cache โดย default อยู่แล้วจึงไม่ต้องใส่ `dynamic`
 
-`POST messages` ใน mock ให้หน่วงเล็กน้อยแล้วตอบ `SENT` และตอบ `409` พร้อม `error` ถ้าผู้ใช้ `isFollowing === false` — จะได้ทดสอบ path FAILED กับปุ่มส่งใหม่ได้จริง
+`POST messages` ในเฟส mock หน่วงเล็กน้อยแล้วตอบ `SENT` และตอบ `409` ถ้าผู้ใช้ `isFollowing === false` **(เปลี่ยนแล้ว)** ตอนนี้บันทึก `PENDING` ลง DB แล้วเรียก LINE Push API จริง ตอบ `SENT`/`FAILED` ตามผล และ `GET messages` รองรับ `?cursor=&limit=`
 
 ## Step 5 — ชั้น query และ store
 
@@ -111,8 +113,8 @@ type Message = {
 - **`src/features/chat/query-keys.ts`** — มี `conversations()` และ `messages(userId)` อยู่แล้ว ใช้ต่อได้
 - **`src/features/chat/hooks/`**
   - `useConversations` — `refetchInterval: 3000` ตาม §6 และตั้ง `refetchIntervalInBackground: false` เพื่อหยุด poll ตอนสลับแท็บ ตามที่ §13 ระบุเป็นความเสี่ยง
-  - `useMessages(userId)` — `refetchInterval: 2000`
-  - `useSendMessage` — optimistic: ยัดข้อความ `PENDING` เข้า cache ทันที, `onError` เปลี่ยนเป็น `FAILED` เก็บข้อความ error, `onSettled` invalidate ทั้ง messages และ conversations
+  - `useMessages(userId)` — `refetchInterval: 2000` **(เปลี่ยนแล้ว)** ใช้ `useInfiniteQuery` (หน้าแรก = ข้อความล่าสุด, กด "โหลดข้อความเก่ากว่า" เพื่อขอหน้าถัดไปด้วย `nextCursor`) และ `useThread` รวมทุกหน้ากับ outbox ด้วย `utils/merge-thread.ts`
+  - `useSendMessage` — optimistic: ใส่ bubble `PENDING` ใน outbox ทันที **(เปลี่ยนแล้ว)** สถานะ `FAILED` ที่ LINE ปฏิเสธมาจาก DB (ไม่ใช่ outbox) และ "ส่งใหม่" คือส่ง `id` เดิมซ้ำเพื่อให้ server ทับแถวเดิม; outbox เหลือแค่ bubble ที่กำลังส่งและคำขอที่ไปไม่ถึง server; ทั้งสองกรณี invalidate ทั้ง messages และ conversations
   - `useMarkAsRead` — ยิงตอนเปิดห้อง แล้ว invalidate conversations
 - **`src/features/chat/stores/chat-store.ts`** — ตอนนี้เก็บ `selectedUserId` ซึ่งซ้ำกับ URL แล้ว ถอดออก เหลือ state ที่ไม่ได้อยู่ใน URL และไม่ใช่ server data จริง ๆ คือ `drafts: Record<userId, string>` (ข้อความที่พิมพ์ค้างไว้ ไม่หายตอนสลับห้อง) กับ `isProfileOpen: boolean`
 
@@ -161,9 +163,9 @@ src/app/
 
 ## Step 10 — Login และการป้องกัน route
 
-- **`src/app/login/page.tsx`** — สองคอลัมน์: ซ้าย 620px พื้นดำ (โลโก้, พาดหัว "ตอบแชทลูกค้าจาก LINE OA ได้จากหน้าเว็บเดียว", สามข้อ 01/02/03 เลข mono สี `#9FD1B2`, ฟุตเตอร์ "Next.js · Vercel · LINE Messaging API") ขวาเป็นฟอร์มกว้าง 400px พร้อมบล็อก QR เส้นประ + ลิงก์ OA บน mobile ซ้อนเป็นคอลัมน์เดียว
+- **`src/app/login/page.tsx`** — สองคอลัมน์: ซ้าย 620px พื้นดำ (โลโก้, พาดหัว "ตอบแชทลูกค้าจาก LINE OA ได้จากหน้าเว็บเดียว", สามข้อ 01/02/03 เลข mono สี `#9FD1B2`, ฟุตเตอร์ "Next.js · Vercel · LINE Messaging API") ขวาเป็นฟอร์มกว้าง 400px พร้อมบล็อก QR + ลิงก์ OA (**เปลี่ยนแล้ว:** QR สร้างจาก `NEXT_PUBLIC_LINE_OA_URL` เป็น SVG ใน `OaInvite.tsx` — ไม่ตั้งค่าจะเหลือกรอบเส้นประ) บน mobile ซ้อนเป็นคอลัมน์เดียว
 - **`LoginForm.tsx`** (client leaf) — input password + สถานะกำลังส่ง + ข้อความเมื่อรหัสผิด
-- **`src/server/auth.ts`** — เซ็นและตรวจ session cookie ด้วย HMAC-SHA256 จาก `SESSION_SECRET` (`node:crypto`, ใช้ `timingSafeEqual`)
+- **`src/server/session.ts`** — เซ็นและตรวจ session cookie ด้วย HMAC-SHA256 จาก `SESSION_SECRET` (`node:crypto`, ใช้ `timingSafeEqual`) ส่วน `src/server/auth.ts` คือตัวตรวจ cookie ใน route handler
 - **`src/app/api/auth/login/route.ts`** และ `logout/route.ts` — เทียบกับ `ADMIN_PASSWORD` แล้วตั้ง cookie `httpOnly` + `secure` + `sameSite=lax` ตาม §12 (`cookies()` เป็น async ใน Next 16)
 - **`src/proxy.ts`** — Next 16 เปลี่ยนชื่อ middleware เป็น proxy แล้ว (ยืนยันจาก docs ในเครื่อง) กัน `/chat/*` และ `/api/conversations/*` โดยเว้น `/api/webhook` ไว้ให้ LINE ยิงเข้าได้ ตาม §12 ของแผนเดิม
 
@@ -188,6 +190,6 @@ src/app/
 
 ## หลังจากนี้
 
-เมื่อ UI นิ่งแล้ว Phase 1–3 ของ [implementation-plan.md](implementation-plan.md) คือการเปลี่ยน `src/server/mock/conversations.ts` เป็น Prisma repository และเพิ่ม `/api/webhook` กับ Push API — ถ้า UI ยึด shape ตาม Step 3 ไว้ ส่วน components และ hooks ไม่ต้องแก้เลย
+ทำครบแล้ว: Phase 1 (webhook รับข้อความ), Phase 2–3 (Prisma repository แทน mock, ส่งด้วย Push API + retry, cursor pagination) และ §7 ของแผนเดิมอัปเดตให้ตรงกับโครง `features/` `shared/` `server/` ที่ใช้จริงแล้ว รวมถึงหมายเหตุว่า `middleware.ts` คือ `proxy.ts` บน Next 16
 
-หมายเหตุ: §7 (Folder Structure) ของแผนเดิมล้าสมัยไปแล้วตั้งแต่ตอน scaffold ควรอัปเดตให้ตรงกับโครง `features/` `shared/` `server/` ที่ใช้จริง และเพิ่มหมายเหตุว่า `middleware.ts` คือ `proxy.ts` บน Next 16
+ที่ยังไม่ได้ทำจาก Phase 4: unit tests (signature, webhook handler)

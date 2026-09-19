@@ -8,8 +8,10 @@ export default defineConfig({
   schema: 'prisma/schema.prisma',
   migrations: { path: 'prisma/migrations' },
   datasource: {
-    // migrate ต้องใช้ direct connection (pooler ของ Neon ทำ advisory lock ของ migrate ไม่ได้)
+    // migrate ควรใช้ direct connection (pooler ของ Neon ทำ advisory lock ของ migrate ไม่ได้)
+    // DATABASE_URL_UNPOOLED คือชื่อที่ Neon integration บน Vercel ใส่ให้อัตโนมัติ
     // ไม่ throw ถ้าไม่มีค่า เพื่อให้ `prisma generate` รันได้บน CI/เครื่องที่ยังไม่มี DB
-    url: process.env.DIRECT_URL || process.env.DATABASE_URL || '',
+    url:
+      process.env.DIRECT_URL || process.env.DATABASE_URL_UNPOOLED || process.env.DATABASE_URL || '',
   },
 });
