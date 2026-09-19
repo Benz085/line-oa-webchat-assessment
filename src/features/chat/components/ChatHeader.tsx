@@ -10,9 +10,10 @@ import type { Conversation } from '../types';
 
 type ChatHeaderProps = {
   conversation: Conversation;
+  mobileAction?: React.ReactNode;
 };
 
-export function ChatHeader({ conversation }: ChatHeaderProps) {
+export function ChatHeader({ conversation, mobileAction }: ChatHeaderProps) {
   const isProfileOpen = useChatStore((s) => s.isProfileOpen);
   const toggleProfile = useChatStore((s) => s.toggleProfile);
   const { userId, displayName, pictureUrl, isFollowing } = conversation;
@@ -52,6 +53,8 @@ export function ChatHeader({ conversation }: ChatHeaderProps) {
       >
         <PanelRightIcon />
       </button>
+
+      <div className="md:hidden">{mobileAction}</div>
     </header>
   );
 }

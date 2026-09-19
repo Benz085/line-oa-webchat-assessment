@@ -27,6 +27,7 @@ export function LogoutButton({ className }: LogoutButtonProps) {
       onClick={logout}
       disabled={isPending}
       aria-label="ออกจากระบบ"
+      title="ออกจากระบบ"
       className={className}
     >
       <LogOutIcon />

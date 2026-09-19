@@ -14,6 +14,7 @@ import { UnfollowedNotice } from './UnfollowedNotice';
 
 type ChatRoomProps = {
   userId: string;
+  headerAction?: React.ReactNode;
 };
 
 function RoomMessage({ title, action }: { title: string; action?: React.ReactNode }) {
@@ -25,7 +26,7 @@ function RoomMessage({ title, action }: { title: string; action?: React.ReactNod
   );
 }
 
-export function ChatRoom({ userId }: ChatRoomProps) {
+export function ChatRoom({ userId, headerAction }: ChatRoomProps) {
   const {
     messages,
     messageCount,
@@ -72,7 +73,7 @@ export function ChatRoom({ userId }: ChatRoomProps) {
   return (
     <div className="flex min-h-0 flex-1">
       <section className="flex min-w-0 flex-1 flex-col">
-        <ChatHeader conversation={conversation} />
+        <ChatHeader conversation={conversation} mobileAction={headerAction} />
         <MessageList
           messages={messages}
           sender={conversation}
