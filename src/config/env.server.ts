@@ -24,9 +24,9 @@ export const getLineEnv = lazy(
   }),
 );
 
+// DIRECT_URL ไม่อยู่ที่นี่: มีแค่ prisma.config.ts ที่อ่าน (ตอน migrate) แอปตอน runtime ใช้ DATABASE_URL อย่างเดียว
 export const getDbEnv = lazy(
   z.object({
     DATABASE_URL: z.string().min(1),
-    DIRECT_URL: z.string().min(1).optional(),
   }),
 );
