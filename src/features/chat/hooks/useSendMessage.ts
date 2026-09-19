@@ -4,58 +4,69 @@ import { chatKeys } from '../query-keys';
 import { useChatStore } from '../stores/chat-store';
 import type { Message } from '../types';
 
-type SendVars = { userId: string; text: string; localId: string };
+type SendVars = { userId: string; id: string; text: string };
 
 /**
- * ส่งข้อความแบบ optimistic: ใส่ bubble สถานะ PENDING ทันที
- * สำเร็จ → รอให้ข้อความจริงเข้า cache ก่อนค่อยเอาออกจาก outbox (ไม่งั้น bubble กระพริบหาย)
- * ล้มเหลว → เปลี่ยนเป็น FAILED พร้อมข้อความ error และให้กด "ส่งใหม่" ได้
+ * ส่งข้อความแบบ optimistic: ใส่ bubble สถานะ PENDING ทันที แล้วให้ server ตัดสินสถานะจริง
+ *
+ * สำเร็จ (รวมกรณี LINE ปฏิเสธ → ได้ FAILED กลับมา) → รอให้แถวจริงเข้า cache ก่อนค่อยเอาออกจาก outbox
+ *   ไม่งั้น bubble กระพริบหาย
+ * คำขอไม่ถึง server → outbox เปลี่ยนเป็น FAILED พร้อม error; server อาจสร้างแถวไปแล้ว
+ *   (เช่น timeout) จึง invalidate ด้วย ถ้ามีแถวจริงมันจะชนะ outbox ตอน merge
+ *
+ * "ส่งใหม่" = ส่ง id เดิมซ้ำ → server ทับแถวเดิม ไม่สร้างข้อความใหม่ และกันส่งซ้ำด้วย retry key
  */
 export function useSendMessage() {
   const queryClient = useQueryClient();
-  const { addToOutbox, updateInOutbox, removeFromOutbox, clearDraft } = useChatStore.getState();
+  const { putInOutbox, updateInOutbox, removeFromOutbox, clearDraft } = useChatStore.getState();
+
+  const refresh = (userId: string) =>
+    Promise.all([
+      queryClient.invalidateQueries({ queryKey: chatKeys.messages(userId) }),
+      queryClient.invalidateQueries({ queryKey: chatKeys.conversations() }),
+    ]);
 
   const mutation = useMutation({
-    mutationFn: ({ userId, text }: SendVars) => sendMessage(userId, text),
+    mutationFn: ({ userId, id, text }: SendVars) => sendMessage(userId, id, text),
 
-    onSuccess: async (_message, { userId, localId }) => {
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: chatKeys.messages(userId) }),
-        queryClient.invalidateQueries({ queryKey: chatKeys.conversations() }),
-      ]);
-      removeFromOutbox(userId, localId);
+    onSuccess: async (_message, { userId, id }) => {
+      await refresh(userId);
+      removeFromOutbox(userId, id);
     },
 
-    onError: (error, { userId, localId }) => {
-      updateInOutbox(userId, localId, { status: 'FAILED', error: error.message });
+    onError: (error, { userId, id }) => {
+      updateInOutbox(userId, id, { status: 'FAILED', error: error.message });
+      void refresh(userId);
     },
   });
+
+  function submit(userId: string, id: string, text: string, base?: Message) {
+    putInOutbox(userId, {
+      id,
+      lineUserId: userId,
+      direction: 'OUTBOUND',
+      type: 'text',
+      ...base,
+      text,
+      status: 'PENDING',
+      error: null,
+      // เวลาที่ส่งจริง — server ก็ขยับ sentAt เป็นตอนนี้ตอนส่งใหม่ ลำดับจะได้ตรงกัน
+      sentAt: new Date().toISOString(),
+    });
+    mutation.mutate({ userId, id, text });
+  }
 
   function send(userId: string, text: string) {
     const trimmed = text.trim();
     if (!trimmed) return;
 
-    const localId = `local-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-    const pending: Message = {
-      id: localId,
-      lineUserId: userId,
-      direction: 'OUTBOUND',
-      type: 'text',
-      text: trimmed,
-      status: 'PENDING',
-      error: null,
-      sentAt: new Date().toISOString(),
-    };
-
-    addToOutbox(userId, pending);
     clearDraft(userId);
-    mutation.mutate({ userId, text: trimmed, localId });
+    submit(userId, crypto.randomUUID(), trimmed);
   }
 
   function retry(message: Message) {
     if (!message.text) return;
-    updateInOutbox(message.lineUserId, message.id, { status: 'PENDING', error: null });
-    mutation.mutate({ userId: message.lineUserId, text: message.text, localId: message.id });
+    submit(message.lineUserId, message.id, message.text, message);
   }
 
   return { send, retry };

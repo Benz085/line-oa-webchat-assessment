@@ -1,4 +1,4 @@
-import type { Conversation, Message } from './types';
+import type { Conversation, Message, MessagesResponse } from './types';
 
 async function request<T>(input: string, init?: RequestInit): Promise<T> {
   const res = await fetch(input, init);
@@ -20,19 +20,23 @@ export async function fetchConversations(): Promise<Conversation[]> {
   return data.conversations;
 }
 
-export async function fetchMessages(
-  userId: string,
-): Promise<{ messages: Message[]; conversation: Conversation | null }> {
-  return request(`/api/conversations/${encodeURIComponent(userId)}/messages`);
+/** ไม่ส่ง cursor = หน้าล่าสุด; ส่ง nextCursor ของหน้าก่อนหน้า = หน้าที่เก่ากว่า */
+export async function fetchMessages(userId: string, cursor?: string): Promise<MessagesResponse> {
+  const query = cursor ? `?cursor=${encodeURIComponent(cursor)}` : '';
+  return request(`/api/conversations/${encodeURIComponent(userId)}/messages${query}`);
 }
 
-export async function sendMessage(userId: string, text: string): Promise<Message> {
+/**
+ * ส่ง id เดิมซ้ำ = "ส่งใหม่" ข้อความเดิม (server ทับแถวเดิมและกันส่งซ้ำให้)
+ * ผลการส่งจริงอยู่ที่ message.status — ถ้า LINE ปฏิเสธจะได้ FAILED กลับมา ไม่ throw
+ */
+export async function sendMessage(userId: string, id: string, text: string): Promise<Message> {
   const data = await request<{ message: Message }>(
     `/api/conversations/${encodeURIComponent(userId)}/messages`,
     {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ text }),
+      body: JSON.stringify({ id, text }),
     },
   );
   return data.message;

@@ -4,11 +4,11 @@ import { create } from 'zustand';
 import type { Message } from '../types';
 
 /**
- * ข้อความที่ยังไม่ถึง server — กำลังส่ง (PENDING) หรือส่งไม่สำเร็จ (FAILED)
+ * ข้อความที่ผู้ใช้เพิ่งกดส่ง/ส่งใหม่และ server ยังไม่ตอบ (PENDING) หรือคำขอไม่ถึง server (FAILED)
  *
- * เก็บแยกจาก query cache เพราะ polling จะ overwrite cache ทุก 2 วินาที
- * ข้อความ FAILED ที่ server ไม่รู้จักจะหายไปก่อนที่ผู้ใช้จะกดส่งใหม่ทัน
- * ตอน render จึงเอา outbox มาต่อท้ายข้อความจาก server
+ * ข้อความที่ LINE ปฏิเสธ (FAILED) ถูกบันทึกใน DB แล้ว จึงมาจาก server ไม่ต้องอยู่ที่นี่
+ * outbox มีไว้ให้ bubble ขึ้นทันทีโดยไม่ต้องรอ round trip และไม่ถูก polling ทับ
+ * ตอน render รวมกับข้อความจาก server ด้วย id (ดู utils/merge-thread.ts)
  */
 type ChatState = {
   drafts: Record<string, string>;
@@ -17,7 +17,8 @@ type ChatState = {
 
   setDraft: (userId: string, text: string) => void;
   clearDraft: (userId: string) => void;
-  addToOutbox: (userId: string, message: Message) => void;
+  /** id ซ้ำ = แทนที่ (ใช้ตอนกด "ส่งใหม่" ที่ใช้ id เดิม) */
+  putInOutbox: (userId: string, message: Message) => void;
   updateInOutbox: (userId: string, messageId: string, patch: Partial<Message>) => void;
   removeFromOutbox: (userId: string, messageId: string) => void;
   toggleProfile: () => void;
@@ -35,8 +36,13 @@ export const useChatStore = create<ChatState>()((set) => ({
       drafts: Object.fromEntries(Object.entries(s.drafts).filter(([id]) => id !== userId)),
     })),
 
-  addToOutbox: (userId, message) =>
-    set((s) => ({ outbox: { ...s.outbox, [userId]: [...(s.outbox[userId] ?? []), message] } })),
+  putInOutbox: (userId, message) =>
+    set((s) => ({
+      outbox: {
+        ...s.outbox,
+        [userId]: [...(s.outbox[userId] ?? []).filter((m) => m.id !== message.id), message],
+      },
+    })),
 
   updateInOutbox: (userId, messageId, patch) =>
     set((s) => ({

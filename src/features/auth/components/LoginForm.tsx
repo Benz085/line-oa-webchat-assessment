@@ -54,12 +54,10 @@ export function LoginForm() {
           aria-describedby={error ? 'login-error' : undefined}
           className="h-12 rounded-xl border border-edge-input bg-surface px-3.5 text-[15px] outline-none focus:border-accent focus:ring-[3px] focus:ring-accent-ring"
         />
-        {error ? (
+        {error && (
           <span id="login-error" role="alert" className="text-xs text-danger">
             {error}
           </span>
-        ) : (
-          <span className="text-xs text-muted">ตั้งค่าไว้ใน ADMIN_PASSWORD ของ Vercel</span>
         )}
       </div>
 

@@ -26,7 +26,17 @@ function RoomMessage({ title, action }: { title: string; action?: React.ReactNod
 }
 
 export function ChatRoom({ userId }: ChatRoomProps) {
-  const { messages, conversation, isPending, error, refetch } = useThread(userId);
+  const {
+    messages,
+    messageCount,
+    conversation,
+    isPending,
+    error,
+    refetch,
+    hasNextPage,
+    isFetchingNextPage,
+    fetchNextPage,
+  } = useThread(userId);
   const { send, retry } = useSendMessage();
   const isProfileOpen = useChatStore((s) => s.isProfileOpen);
 
@@ -63,7 +73,14 @@ export function ChatRoom({ userId }: ChatRoomProps) {
     <div className="flex min-h-0 flex-1">
       <section className="flex min-w-0 flex-1 flex-col">
         <ChatHeader conversation={conversation} />
-        <MessageList messages={messages} sender={conversation} onRetry={retry} />
+        <MessageList
+          messages={messages}
+          sender={conversation}
+          onRetry={retry}
+          hasMore={hasNextPage}
+          isLoadingMore={isFetchingNextPage}
+          onLoadMore={fetchNextPage}
+        />
 
         {conversation.isFollowing ? (
           <Composer
@@ -76,7 +93,7 @@ export function ChatRoom({ userId }: ChatRoomProps) {
         )}
       </section>
 
-      {isProfileOpen && <ProfilePanel conversation={conversation} messageCount={messages.length} />}
+      {isProfileOpen && <ProfilePanel conversation={conversation} messageCount={messageCount} />}
     </div>
   );
 }
